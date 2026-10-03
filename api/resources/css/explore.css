@@ -1,0 +1,137 @@
+.explore-root {
+  --explore-safe-top: env(safe-area-inset-top, 0px);
+  --explore-safe-bottom: env(safe-area-inset-bottom, 0px);
+  position: fixed;
+  inset: 0;
+  height: var(--vvh, 100dvh);
+  width: 100%;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.explore-viewport {
+  touch-action: none;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.explore-stage {
+  transform-origin: 0 0;
+}
+
+.explore-map-svg {
+  overflow: visible;
+  color: #18181b;
+}
+
+.explore-header-fade {
+  background: linear-gradient(to bottom, rgb(24 24 27 / 0.82), transparent);
+}
+
+@keyframes zone-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.58;
+  }
+}
+
+@keyframes zone-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.045);
+  }
+}
+
+@keyframes zone-glow {
+  0%,
+  100% {
+    opacity: 0.62;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes zone-halo {
+  0%,
+  100% {
+    opacity: 0.28;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes zone-shimmer {
+  to {
+    stroke-dashoffset: -56;
+  }
+}
+
+.zone-anim-pulse,
+.zone-anim-breathe,
+.zone-anim-glow,
+.zone-glow-halo {
+  -webkit-transform-box: fill-box;
+  transform-box: fill-box;
+  -webkit-transform-origin: center;
+  transform-origin: center;
+}
+
+.zone-anim-pulse {
+  animation: zone-pulse var(--zone-speed, 1.2s) ease-in-out infinite;
+}
+
+.zone-anim-breathe {
+  animation: zone-breathe var(--zone-speed, 1.2s) ease-in-out infinite;
+}
+
+.zone-anim-glow {
+  animation: zone-glow var(--zone-speed, 1.2s) ease-in-out infinite;
+}
+
+.zone-glow-halo {
+  pointer-events: none;
+  animation: zone-halo var(--zone-speed, 1.2s) ease-in-out infinite;
+}
+
+.zone-glow-halo-static {
+  animation: none;
+  opacity: 0.4;
+}
+
+.zone-anim-shimmer {
+  stroke-dasharray: 14 10;
+  animation: zone-shimmer var(--zone-speed, 1.2s) linear infinite;
+}
+
+.explore-map-svg text {
+  font-synthesis: none;
+}
+
+.explore-route-line {
+  stroke-dasharray: 16 12;
+  animation: zone-shimmer 1.1s linear infinite;
+}
+
+.explore-zone {
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .explore-zone:hover {
+    filter: brightness(1.1);
+  }
+}

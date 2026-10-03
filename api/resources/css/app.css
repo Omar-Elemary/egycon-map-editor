@@ -1,0 +1,32 @@
+@import 'tailwindcss';
+@import './explore.css';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../js/**/*.{ts,tsx}';
+@source '../views/**/*.blade.php';
+
+@theme {
+    --font-sans: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+}
+
+html,
+body,
+#root {
+    height: 100%;
+    margin: 0;
+}
+
+body {
+    background: #f4f4f5;
+    color: #18181b;
+}
+
+button,
+a {
+    cursor: pointer;
+}
+
+input[type='color'] {
+    appearance: none;
+}
