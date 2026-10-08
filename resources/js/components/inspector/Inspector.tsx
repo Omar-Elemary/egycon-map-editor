@@ -339,6 +339,15 @@ function ObjectFields({ object }: { object: MapObject }) {
           <Field label="Label">
             <TextInput value={object.label} onChange={(event) => patch({ label: event.target.value })} />
           </Field>
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-zinc-600">
+            <input
+              type="checkbox"
+              checked={object.showLabel !== false}
+              onChange={(event) => patch({ showLabel: event.target.checked })}
+              className="h-4 w-4 accent-lime-600"
+            />
+            Show name on map
+          </label>
           <ColorField
             label="Label color"
             value={object.labelColor}
@@ -351,6 +360,7 @@ function ObjectFields({ object }: { object: MapObject }) {
               onChange={(event) => patch({ fontSize: Number(event.target.value) })}
             />
           </Field>
+          <ZoneWallpaperFields object={object} onChange={patch} />
           <ZoneGuestFields object={object} onChange={patch} />
           <ZoneStyleFields object={object} onChange={patch} />
         </>
@@ -411,6 +421,68 @@ function ObjectFields({ object }: { object: MapObject }) {
       >
         Delete
       </button>
+    </div>
+  );
+}
+
+function ZoneWallpaperFields({
+  object,
+  onChange,
+}: {
+  object: MapObject;
+  onChange: (patch: ObjectPatch) => void;
+}) {
+  if (!isLabeled(object)) return null;
+  async function uploadWallpaper() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      onChange({ wallpaperDataUrl: await readFileAsDataUrl(file) });
+    };
+    input.click();
+  }
+  return (
+    <div className="space-y-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+      <h4 className="text-[11px] font-semibold tracking-wide text-zinc-500">WALLPAPER (OPTIONAL)</h4>
+      <p className="text-[11px] leading-4 text-zinc-500">
+        Cover this zone with a photo or design. It is clipped to the zone shape on the shared map.
+      </p>
+      {object.wallpaperDataUrl && (
+        <img src={object.wallpaperDataUrl} alt="" className="h-20 w-full rounded-lg object-cover" />
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={uploadWallpaper}
+          className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+        >
+          {object.wallpaperDataUrl ? "Replace image" : "Add image"}
+        </button>
+        <button
+          type="button"
+          disabled={!object.wallpaperDataUrl}
+          onClick={() => onChange({ wallpaperDataUrl: null })}
+          className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+        >
+          Remove
+        </button>
+      </div>
+      {object.wallpaperDataUrl && (
+        <Field label={`Image opacity ${((object.wallpaperOpacity ?? 1) * 100).toFixed(0)}%`}>
+          <input
+            type="range"
+            min={0.1}
+            max={1}
+            step={0.05}
+            value={object.wallpaperOpacity ?? 1}
+            onChange={(event) => onChange({ wallpaperOpacity: Number(event.target.value) })}
+            className="w-full"
+          />
+        </Field>
+      )}
     </div>
   );
 }

@@ -68,6 +68,9 @@ export type Labeled = {
   hours?: string;
   activity?: string;
   photoDataUrl?: string;
+  showLabel?: boolean;
+  wallpaperDataUrl?: string;
+  wallpaperOpacity?: number;
 };
 
 export type YouAreHere = {
@@ -136,7 +139,7 @@ export type MapObject =
   | PathObject;
 
 export type ObjectPatch = Partial<BaseObject> &
-  Partial<Labeled> & {
+  Omit<Partial<Labeled>, "photoDataUrl" | "wallpaperDataUrl"> & {
     width?: number;
     height?: number;
     cornerRadius?: number;
@@ -152,6 +155,9 @@ export type ObjectPatch = Partial<BaseObject> &
     hours?: string;
     activity?: string;
     photoDataUrl?: string | null;
+    showLabel?: boolean;
+    wallpaperDataUrl?: string | null;
+    wallpaperOpacity?: number;
   };
 
 export type MapProject = {

@@ -61,7 +61,7 @@ function ShapeLabel({
   height: number;
   object: MapObject;
 }) {
-  if (!isLabeled(object) || !object.label) return null;
+  if (!isLabeled(object) || !object.label || object.showLabel === false) return null;
   const fill = object.labelColor || "#ffffff";
   const fontFamily = object.fontFamily || "Arial, Helvetica, sans-serif";
   const fontSize = object.fontSize || 16;
@@ -81,6 +81,10 @@ function ShapeLabel({
         fontFamily,
         fontWeight: 700,
         pointerEvents: "none",
+        paintOrder: "stroke",
+        stroke: "rgba(0,0,0,0.55)",
+        strokeWidth: Math.max(2, fontSize * 0.18),
+        strokeLinejoin: "round",
       }}
     >
       {lines.map((line, index) => (
@@ -96,6 +100,80 @@ function ShapeLabel({
       ))}
     </text>
   );
+}
+
+function zoneWallpaperId(objectId: string) {
+  return `wallpaper-${objectId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+}
+
+function WallpaperClip({ object }: { object: MapObject }) {
+  if (!isLabeled(object) || !object.wallpaperDataUrl) return null;
+  const id = zoneWallpaperId(object.id);
+  if (object.type === "rect") {
+    return (
+      <clipPath id={id}>
+        <rect width={object.width} height={object.height} rx={object.cornerRadius} ry={object.cornerRadius} />
+      </clipPath>
+    );
+  }
+  if (object.type === "ellipse") {
+    return (
+      <clipPath id={id}>
+        <ellipse
+          cx={object.width / 2}
+          cy={object.height / 2}
+          rx={Math.max(1, object.width / 2)}
+          ry={Math.max(1, object.height / 2)}
+        />
+      </clipPath>
+    );
+  }
+  if (object.type === "polygon") {
+    return (
+      <clipPath id={id}>
+        <polygon points={pointsAttr(object.points)} />
+      </clipPath>
+    );
+  }
+  return null;
+}
+
+function ZoneWallpaper({ object }: { object: MapObject }) {
+  if (!isLabeled(object) || !object.wallpaperDataUrl) return null;
+  const id = zoneWallpaperId(object.id);
+  const opacity = object.wallpaperOpacity ?? 1;
+  if (object.type === "rect" || object.type === "ellipse") {
+    return (
+      <image
+        href={object.wallpaperDataUrl}
+        x={0}
+        y={0}
+        width={object.width}
+        height={object.height}
+        preserveAspectRatio="xMidYMid slice"
+        clipPath={`url(#${id})`}
+        opacity={opacity}
+        style={{ pointerEvents: "none" }}
+      />
+    );
+  }
+  if (object.type === "polygon") {
+    const bounds = polygonBounds(object.points);
+    return (
+      <image
+        href={object.wallpaperDataUrl}
+        x={bounds.x}
+        y={bounds.y}
+        width={Math.max(1, bounds.width)}
+        height={Math.max(1, bounds.height)}
+        preserveAspectRatio="xMidYMid slice"
+        clipPath={`url(#${id})`}
+        opacity={opacity}
+        style={{ pointerEvents: "none" }}
+      />
+    );
+  }
+  return null;
 }
 
 function ExploreArrow({ object }: { object: Extract<MapObject, { type: "arrow" }> }) {
@@ -233,6 +311,7 @@ function ExploreObject({
               }}
             />
           </g>
+          <ZoneWallpaper object={object} />
           <ShapeLabel
             width={object.type === "polygon" ? polygonBounds(object.points).width : object.width}
             height={object.type === "polygon" ? polygonBounds(object.points).height : object.height}
@@ -323,6 +402,9 @@ export function ExploreSvg({
             <circle cx="8" cy="8" r="2.1" fill={style.hatchColor} />
           </pattern>,
         );
+      }
+      if (isLabeled(object) && object.wallpaperDataUrl) {
+        nodes.push(<WallpaperClip key={`clip-${object.id}`} object={object} />);
       }
       return nodes;
     });
@@ -415,6 +497,12 @@ export function ExploreSvg({
             strokeLinejoin="round"
             className="explore-route-line"
           />
+          <g
+            transform={`translate(${route[route.length - 2]} ${route[route.length - 1]})`}
+          >
+            <circle r="11" fill="#65a30d" stroke="#ffffff" strokeWidth="4" />
+            <circle r="3.5" fill="#ffffff" />
+          </g>
         </g>
       )}
       {map.youAreHere && (

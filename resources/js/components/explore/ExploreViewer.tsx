@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock, List, MapPinned, Maximize2, Minus, Plus, Search, Sparkles, X } from "lucide-react";
+import { Clock, List, MapPinned, Maximize2, Minus, PanelRightClose, PanelRightOpen, Plus, Search, Sparkles, X } from "lucide-react";
 import { useEffect, useMemo, useState, type PointerEvent } from "react";
 import { ExploreSvg } from "@/components/explore/ExploreSvg";
 import { useExploreGestures } from "@/hooks/use-explore-gestures";
@@ -13,13 +13,17 @@ import { isLabeled } from "@/lib/types";
 function ZoneDetails({
   object,
   onClose,
+  className = "",
 }: {
   object: MapObject;
   onClose: () => void;
+  className?: string;
 }) {
   if (!isLabeled(object)) return null;
   return (
-    <div className="rounded-3xl bg-white p-4 text-zinc-900 shadow-2xl">
+    <div
+      className={`rounded-3xl bg-white p-4 text-zinc-900 shadow-2xl ${className}`.trim()}
+    >
       {object.photoDataUrl && (
         <img src={object.photoDataUrl} alt="" className="mb-3 h-28 w-full rounded-2xl object-cover" />
       )}
@@ -81,6 +85,7 @@ function ZoneList({
     <div className="space-y-1">
       {zones.map((object) => {
         const active = selectedId === object.id;
+        const wallpaper = isLabeled(object) ? object.wallpaperDataUrl : undefined;
         return (
           <button
             key={object.id}
@@ -97,8 +102,12 @@ function ZoneList({
             }`}
           >
             <span
-              className={`h-9 w-9 shrink-0 rounded-xl border ${dark ? "border-white/15" : "border-zinc-200"}`}
-              style={{ background: object.fill }}
+              className={`h-9 w-9 shrink-0 rounded-xl border bg-cover bg-center ${dark ? "border-white/15" : "border-zinc-200"}`}
+              style={
+                wallpaper
+                  ? { backgroundImage: `url(${wallpaper})`, backgroundColor: object.fill }
+                  : { background: object.fill }
+              }
             />
             <span
               className={`min-w-0 flex-1 truncate text-sm font-medium ${
@@ -122,6 +131,7 @@ export function ExploreViewer({ map }: { map: MapProject }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [listOpen, setListOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(true);
   const [grabbing, setGrabbing] = useState(false);
   const [ready, setReady] = useState(false);
   const gestures = useExploreGestures(map.width, map.height);
@@ -147,6 +157,10 @@ export function ExploreViewer({ map }: { map: MapProject }) {
       position: body.style.position,
       width: body.style.width,
       height: body.style.height,
+      top: body.style.top,
+      left: body.style.left,
+      right: body.style.right,
+      bottom: body.style.bottom,
     };
     function syncHeight() {
       const height = window.visualViewport?.height ?? window.innerHeight;
@@ -154,7 +168,10 @@ export function ExploreViewer({ map }: { map: MapProject }) {
     }
     body.style.overflow = "hidden";
     body.style.position = "fixed";
-    body.style.inset = "0";
+    body.style.top = "0";
+    body.style.left = "0";
+    body.style.right = "0";
+    body.style.bottom = "0";
     body.style.width = "100%";
     syncHeight();
     window.visualViewport?.addEventListener("resize", syncHeight);
@@ -165,7 +182,10 @@ export function ExploreViewer({ map }: { map: MapProject }) {
       body.style.position = previous.position;
       body.style.width = previous.width;
       body.style.height = previous.height;
-      body.style.inset = "";
+      body.style.top = previous.top;
+      body.style.left = previous.left;
+      body.style.right = previous.right;
+      body.style.bottom = previous.bottom;
       root.style.removeProperty("--vvh");
       window.visualViewport?.removeEventListener("resize", syncHeight);
       window.visualViewport?.removeEventListener("scroll", syncHeight);
@@ -176,7 +196,8 @@ export function ExploreViewer({ map }: { map: MapProject }) {
   function onViewportPointerUp(event: PointerEvent<HTMLDivElement>) {
     gestures.onPointerUp(event);
     setGrabbing(false);
-    if (!gestures.consumeTap() || event.button > 0) return;
+    if (!gestures.consumeTap()) return;
+    if (event.pointerType === "mouse" && event.button > 0) return;
     const hit = document.elementFromPoint(event.clientX, event.clientY);
     const zone = hit?.closest("[data-zone-id]");
     const id = zone?.getAttribute("data-zone-id");
@@ -304,7 +325,7 @@ export function ExploreViewer({ map }: { map: MapProject }) {
         <div
           className={`pointer-events-none absolute right-3 z-20 md:right-4 md:bottom-4 ${
             selected && isLabeled(selected)
-              ? "bottom-[max(10.5rem,calc(var(--explore-safe-bottom)+9.5rem))]"
+              ? "bottom-[calc(var(--explore-sheet)+0.25rem)]"
               : "bottom-[max(1.25rem,calc(var(--explore-safe-bottom)+1rem))]"
           }`}
         >
@@ -344,13 +365,27 @@ export function ExploreViewer({ map }: { map: MapProject }) {
 
         {selected && isLabeled(selected) && (
           <div className="absolute inset-x-0 bottom-0 z-20 px-3 pb-[max(0.75rem,var(--explore-safe-bottom))] md:hidden">
-            <ZoneDetails object={selected} onClose={() => setSelectedId(null)} />
+            <ZoneDetails
+              object={selected}
+              onClose={() => setSelectedId(null)}
+              className="max-h-[var(--explore-sheet)] overflow-y-auto overscroll-contain select-text"
+            />
           </div>
         )}
       </div>
 
+      {panelOpen && (
       <aside className="hidden w-80 shrink-0 flex-col border-l border-white/10 bg-zinc-950 md:flex">
-        <div className="border-b border-white/10 px-5 py-4">
+        <div className="relative border-b border-white/10 px-5 py-4 pr-12">
+          <button
+            type="button"
+            onClick={() => setPanelOpen(false)}
+            title="Hide panel"
+            aria-label="Hide panel"
+            className="absolute top-4 right-4 grid h-8 w-8 place-items-center rounded-full text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <PanelRightClose className="h-4 w-4" />
+          </button>
           <p className="text-[11px] font-semibold tracking-[0.18em] text-lime-300 uppercase">Explore</p>
           <h1 className="mt-1 text-xl font-semibold">{map.name}</h1>
           <p className="mt-1 text-xs leading-5 text-zinc-400">
@@ -382,6 +417,19 @@ export function ExploreViewer({ map }: { map: MapProject }) {
           </div>
         )}
       </aside>
+      )}
+
+      {!panelOpen && (
+        <button
+          type="button"
+          onClick={() => setPanelOpen(true)}
+          title="Show panel"
+          aria-label="Show panel"
+          className="absolute top-4 right-4 z-20 hidden h-11 w-11 place-items-center rounded-full border border-white/15 bg-zinc-900/85 text-white shadow-lg backdrop-blur-md transition-colors hover:bg-zinc-800 md:grid"
+        >
+          <PanelRightOpen className="h-5 w-5" />
+        </button>
+      )}
 
       {listOpen && (
         <div className="absolute inset-0 z-30 bg-black/50 md:hidden" onClick={() => setListOpen(false)}>

@@ -40,12 +40,10 @@ export function viewForBounds(bounds: Bounds, viewport: Bounds, padding = 36): E
     0.12,
     4,
   );
-  const cx = bounds.x + bounds.width / 2;
-  const cy = bounds.y + bounds.height / 2;
   return {
     scale,
-    x: viewport.width / 2 - cx * scale,
-    y: viewport.height / 2 - cy * scale,
+    x: viewport.x + (viewport.width - w * scale) / 2,
+    y: viewport.y + (viewport.height - h * scale) / 2,
   };
 }
 
@@ -86,6 +84,7 @@ export function useExploreGestures(mapWidth: number, mapHeight: number) {
   const moved = useRef(false);
   const tapReady = useRef(false);
   const userAdjusted = useRef(false);
+  const lastSize = useRef<Bounds | null>(null);
   const raf = useRef(0);
   const pending = useRef<ExploreView | null>(null);
 
@@ -131,7 +130,7 @@ export function useExploreGestures(mapWidth: number, mapHeight: number) {
     const mobile = viewport.width < 768;
     const pad = mobile ? 20 : 40;
     const top = mobile ? 76 : 0;
-    const bottom = mobile ? 88 : 0;
+    const bottom = mobile ? 168 : 0;
     const area: Bounds = {
       x: 0,
       y: top,
@@ -148,9 +147,9 @@ export function useExploreGestures(mapWidth: number, mapHeight: number) {
       const mobile = viewport.width < 768;
       const area: Bounds = {
         x: 0,
-        y: mobile ? 64 : 0,
+        y: mobile ? 76 : 0,
         width: viewport.width,
-        height: Math.max(1, viewport.height - (mobile ? 160 : 0)),
+        height: Math.max(1, viewport.height - (mobile ? 276 : 0)),
       };
       userAdjusted.current = true;
       applyView(viewForBounds(bounds, area, mobile ? 48 : 72), true);
@@ -187,8 +186,21 @@ export function useExploreGestures(mapWidth: number, mapHeight: number) {
     const el = viewportRef.current;
     if (!el) return;
     const onResize = () => {
-      if (!userAdjusted.current) fit();
+      const next = measure();
+      const previous = lastSize.current;
+      lastSize.current = next;
+      if (!userAdjusted.current) {
+        fit();
+        return;
+      }
+      if (!previous) return;
+      const dx = (next.width - previous.width) / 2;
+      const dy = (next.height - previous.height) / 2;
+      if (dx === 0 && dy === 0) return;
+      const current = viewRef.current;
+      applyView({ ...current, x: current.x + dx, y: current.y + dy }, true);
     };
+    lastSize.current = measure();
     const observer = new ResizeObserver(onResize);
     observer.observe(el);
     window.visualViewport?.addEventListener("resize", onResize);
@@ -198,7 +210,7 @@ export function useExploreGestures(mapWidth: number, mapHeight: number) {
       window.visualViewport?.removeEventListener("resize", onResize);
       window.removeEventListener("orientationchange", onResize);
     };
-  }, [fit]);
+  }, [applyView, fit, measure]);
 
   useEffect(() => {
     return () => {

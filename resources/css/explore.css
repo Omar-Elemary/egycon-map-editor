@@ -1,6 +1,7 @@
 .explore-root {
   --explore-safe-top: env(safe-area-inset-top, 0px);
   --explore-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --explore-sheet: calc(42dvh + var(--explore-safe-bottom) + 0.75rem);
   position: fixed;
   inset: 0;
   height: var(--vvh, 100dvh);
@@ -13,6 +14,7 @@
 }
 
 .explore-viewport {
+  overflow: hidden;
   touch-action: none;
   overscroll-behavior: none;
   -webkit-user-select: none;
@@ -119,6 +121,17 @@
 
 .explore-map-svg text {
   font-synthesis: none;
+  paint-order: stroke;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.explore-map-svg image {
+  -webkit-user-drag: none;
+}
+
+.explore-route {
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35));
 }
 
 .explore-route-line {
@@ -133,5 +146,16 @@
 @media (hover: hover) {
   .explore-zone:hover {
     filter: brightness(1.1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zone-anim-pulse,
+  .zone-anim-breathe,
+  .zone-anim-glow,
+  .zone-glow-halo,
+  .zone-anim-shimmer,
+  .explore-route-line {
+    animation: none;
   }
 }

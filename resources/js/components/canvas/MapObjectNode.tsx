@@ -28,7 +28,7 @@ function ShapeLabel({
   height: number;
   object: MapObject;
 }) {
-  if (!isLabeled(object) || !object.label) return null;
+  if (!isLabeled(object) || !object.label || object.showLabel === false) return null;
   return (
     <Text
       width={Math.max(8, width)}
@@ -43,8 +43,41 @@ function ShapeLabel({
       listening={false}
       wrap="word"
       padding={8}
+      shadowColor="rgba(0,0,0,0.65)"
+      shadowBlur={4}
+      shadowEnabled
+      shadowOpacity={0.9}
+      shadowOffsetX={0}
+      shadowOffsetY={1}
     />
   );
+}
+
+function useWallpaper(object: MapObject): HTMLImageElement | undefined {
+  const url = isLabeled(object) ? object.wallpaperDataUrl : undefined;
+  return useHtmlImage(url);
+}
+
+function wallpaperCover(
+  image: HTMLImageElement,
+  boundsWidth: number,
+  boundsHeight: number,
+  boundsX = 0,
+  boundsY = 0,
+) {
+  const iw = image.naturalWidth || image.width || 1;
+  const ih = image.naturalHeight || image.height || 1;
+  const bw = Math.max(1, boundsWidth);
+  const bh = Math.max(1, boundsHeight);
+  const scale = Math.max(bw / iw, bh / ih);
+  return {
+    fillPatternImage: image,
+    fillPatternRepeat: "no-repeat" as const,
+    fillPatternScaleX: scale,
+    fillPatternScaleY: scale,
+    fillPatternX: boundsX + (bw - iw * scale) / 2,
+    fillPatternY: boundsY + (bh - ih * scale) / 2,
+  };
 }
 
 function ImageNode({ object }: { object: Extract<MapObject, { type: "image" }> }) {
@@ -132,6 +165,9 @@ export function MapObjectNode({
   const pattern = useFillPattern(object);
   const fillProps = zoneShapeProps(object, pattern);
   const polyBounds = object.type === "polygon" ? polygonBounds(object.points) : null;
+  const wallpaper = useWallpaper(object);
+  const wallpaperOpacity = isLabeled(object) ? (object.wallpaperOpacity ?? 1) : 1;
+  const hasWallpaper = Boolean(wallpaper && isLabeled(object) && object.wallpaperDataUrl);
 
   if (!object.visible) return null;
 
@@ -159,6 +195,19 @@ export function MapObjectNode({
               cornerRadius={object.cornerRadius}
               {...fillProps}
             />
+            {hasWallpaper && wallpaper && (
+              <Rect
+                width={object.width}
+                height={object.height}
+                cornerRadius={object.cornerRadius}
+                fill="#ffffff"
+                strokeEnabled={false}
+                shadowEnabled={false}
+                listening={false}
+                opacity={wallpaperOpacity}
+                {...wallpaperCover(wallpaper, object.width, object.height)}
+              />
+            )}
           </ZoneFill>
           <ShapeLabel width={object.width} height={object.height} object={object} />
         </>
@@ -173,6 +222,20 @@ export function MapObjectNode({
               radiusY={Math.max(1, object.height / 2)}
               {...fillProps}
             />
+            {hasWallpaper && wallpaper && (
+              <Ellipse
+                x={object.width / 2}
+                y={object.height / 2}
+                radiusX={Math.max(1, object.width / 2)}
+                radiusY={Math.max(1, object.height / 2)}
+                fill="#ffffff"
+                strokeEnabled={false}
+                shadowEnabled={false}
+                listening={false}
+                opacity={wallpaperOpacity}
+                {...wallpaperCover(wallpaper, object.width, object.height)}
+              />
+            )}
           </ZoneFill>
           <ShapeLabel width={object.width} height={object.height} object={object} />
         </>
@@ -187,6 +250,24 @@ export function MapObjectNode({
             }}
           >
             <Line points={object.points} closed {...fillProps} />
+            {hasWallpaper && wallpaper && (
+              <Line
+                points={object.points}
+                closed
+                fill="#ffffff"
+                strokeEnabled={false}
+                shadowEnabled={false}
+                listening={false}
+                opacity={wallpaperOpacity}
+                {...wallpaperCover(
+                  wallpaper,
+                  polyBounds.width,
+                  polyBounds.height,
+                  polyBounds.x,
+                  polyBounds.y,
+                )}
+              />
+            )}
           </ZoneFill>
           <ShapeLabel
             width={polyBounds.width}

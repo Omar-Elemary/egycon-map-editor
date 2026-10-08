@@ -96,14 +96,109 @@ function smooth(map: MapProject, points: number[], goalId?: string) {
   return out;
 }
 
+function zoneInteriorPoint(zone: MapObject): { x: number; y: number } {
+  const center = objectCenter(zone);
+  if (insideZone(zone, center.x, center.y)) return center;
+  const bounds = getObjectBounds(zone);
+  // Sample a small grid inside the bounds to find a guaranteed interior
+  // point (bounds center can sit outside concave polygons).
+  for (const fy of [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8]) {
+    for (const fx of [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8]) {
+      const x = bounds.x + bounds.width * fx;
+      const y = bounds.y + bounds.height * fy;
+      if (insideZone(zone, x, y)) return { x, y };
+    }
+  }
+  return center;
+}
+
+const ARRIVAL_BACKOFF = 10;
+
+function clipRouteToZoneBorder(
+  zone: MapObject,
+  points: number[],
+  backoff = ARRIVAL_BACKOFF,
+): number[] {
+  if (points.length < 4) return points;
+  const inside = (x: number, y: number) => insideZone(zone, x, y);
+  // If we start inside the zone there is nothing to walk.
+  if (inside(points[0], points[1])) return points.slice(0, 2);
+  // Walk the polyline and find the first entry into the zone.
+  for (let i = 0; i < points.length - 2; i += 2) {
+    const x1 = points[i];
+    const y1 = points[i + 1];
+    const x2 = points[i + 2];
+    const y2 = points[i + 3];
+    const outside1 = !inside(x1, y1);
+    const segLen = Math.hypot(x2 - x1, y2 - y1);
+    if (segLen < 1e-6) continue;
+    // Dense sampling finds the entry even on long smoothed segments.
+    const steps = Math.max(1, Math.ceil(segLen / 4));
+    let prevInside = !outside1;
+    for (let s = 1; s <= steps; s += 1) {
+      const t = s / steps;
+      const sx = x1 + (x2 - x1) * t;
+      const sy = y1 + (y2 - y1) * t;
+      const curInside = inside(sx, sy);
+      if (!prevInside && curInside) {
+        // Binary-search the border between the last outside sample and this inside sample.
+        let lo = (s - 1) / steps;
+        let hi = t;
+        for (let iter = 0; iter < 24; iter += 1) {
+          const mid = (lo + hi) / 2;
+          const mx = x1 + (x2 - x1) * mid;
+          const my = y1 + (y2 - y1) * mid;
+          if (inside(mx, my)) hi = mid;
+          else lo = mid;
+        }
+        const bx = x1 + (x2 - x1) * hi;
+        const by = y1 + (y2 - y1) * hi;
+        // Step back along the travel direction so the line cap rests just
+        // outside the border instead of bleeding into the zone middle.
+        const ux = (x2 - x1) / segLen;
+        const uy = (y2 - y1) / segLen;
+        const distFromSegStart = hi * segLen;
+        const pull = Math.min(backoff, Math.max(0, distFromSegStart - 1));
+        const ax = bx - ux * pull;
+        const ay = by - uy * pull;
+        const out: number[] = [];
+        for (let k = 0; k <= i; k += 2) {
+          out.push(points[k], points[k + 1]);
+        }
+        // Avoid duplicating the segment start point.
+        if (out.length >= 2) {
+          const lx = out[out.length - 2];
+          const ly = out[out.length - 1];
+          if (Math.hypot(ax - lx, ay - ly) < 0.5) {
+            return out;
+          }
+        }
+        out.push(ax, ay);
+        return out;
+      }
+      prevInside = curInside;
+    }
+  }
+  // Path never enters the zone (e.g. coarse grid around concave shapes):
+  // drop the interior tail and keep the last outside point so we never
+  // render a line through the middle.
+  for (let i = points.length - 2; i >= 0; i -= 2) {
+    if (!inside(points[i], points[i + 1])) {
+      return points.slice(0, i + 2);
+    }
+  }
+  return points.slice(0, 2);
+}
+
 export function routeToZone(map: MapProject, zone: MapObject): number[] | null {
   const start = map.youAreHere;
   if (!start) return null;
-  const goal = objectCenter(zone);
+  if (insideZone(zone, start.x, start.y)) return null;
+  const goal = zoneInteriorPoint(zone);
   const from = snapWalkable(map, start.x, start.y, zone.id);
   const to = snapWalkable(map, goal.x, goal.y, zone.id);
   if (lineClear(map, from.x, from.y, to.x, to.y, zone.id)) {
-    return [start.x, start.y, to.x, to.y, goal.x, goal.y];
+    return clipRouteToZoneBorder(zone, [start.x, start.y, to.x, to.y, goal.x, goal.y]);
   }
 
   const cols = Math.ceil(map.width / STEP) + 1;
@@ -169,7 +264,7 @@ export function routeToZone(map: MapProject, zone: MapObject): number[] | null {
   }
 
   if (found < 0) {
-    return [start.x, start.y, goal.x, goal.y];
+    return clipRouteToZoneBorder(zone, [start.x, start.y, goal.x, goal.y]);
   }
 
   const path: number[] = [to.x, to.y, goal.x, goal.y];
@@ -181,7 +276,7 @@ export function routeToZone(map: MapProject, zone: MapObject): number[] | null {
     cursor = came[cursor];
   }
   path.unshift(start.x, start.y);
-  return smooth(map, path, zone.id);
+  return clipRouteToZoneBorder(zone, smooth(map, path, zone.id));
 }
 
 export function zoneMatchesQuery(object: MapObject, query: string): boolean {
