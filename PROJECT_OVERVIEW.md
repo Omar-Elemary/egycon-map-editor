@@ -248,6 +248,25 @@ Two read paths:
 
 This was the most recent change (commit `8fb8ed7`), so it is the freshest and least battle-tested code in the project.
 
+### Viewer pan/zoom bounds
+
+`hooks/use-explore-gestures.ts` owns all view state for the Explore mode. The view is `{x, y, scale}`, applied to the stage as `translate3d(x,y,0) scale(s)` with `transformOrigin: 0 0`.
+
+**The zoom floor is dynamic, not a constant.** `minScaleFor(width, height, viewport)` returns the scale at which the whole map fits inside the usable area (the viewport minus the mobile header and bottom-sheet chrome). `clampView()` clamps `scale` into `[minScaleFor(...), MAX_SCALE]` on *every* view mutation, so the map can never be shrunk past the point where all of it is visible. Because every input path — wheel, pinch, drag, zoom buttons, keyboard, and `focusBounds()` — funnels through `applyView()` → `clampView()`, the bound is enforced uniformly with no per-handler special-casing.
+
+When the floor lifts the scale, `clampView()` re-anchors on the map point that was under the viewport centre, so reaching the limit does not visually jump.
+
+Typical floors for the 1640×960 demo map:
+
+| Viewport | Floor | Map size on screen |
+|---|---|---|
+| phone portrait 390×844 | 0.213 | 350 px wide |
+| phone landscape 844×390 | 0.323 | 530 px wide |
+| tablet portrait 768×1024 | 0.420 | 688 px wide |
+| desktop 1400×900 | 0.805 | 1320 px wide |
+
+`fit()`, the zoom-floor calculation, and `clampView()` all derive from the same `fitArea()` / `fitPadding()` helpers so the initial view and the limit cannot disagree.
+
 ### Authorization model
 
 No Sanctum, no sessions, no login. `config/auth.php` is stock and unused; the `User` model has zero relationships and no share is owned by anyone.
@@ -275,23 +294,23 @@ Route protection matrix:
 
 ## 7. Current verification baseline
 
-Measured on commit `8fb8ed7`, Windows, PHP 8.x / Node with `node_modules` installed.
+Measured on Windows, PHP 8.x / Node with `node_modules` installed. Bundle figures are content hashes and change on every build; the sizes are the stable part. Re-verify with the commands in Section 11.
 
 | Check | Command | Result |
 |---|---|---|
-| Production build | `npm run build` | ✅ passes in ~4.3s. Emits a **chunk-size warning**. |
-| TypeScript | `npx tsc --noEmit` | ❌ **fails, 8 errors** (Problem 2) |
-| PHP tests | `php artisan test` | ✅ 12 passed, 34 assertions, 7.2s |
+| Production build | `npm run build` | ✅ passes. Emits a **chunk-size warning**. |
+| TypeScript | `npx tsc --noEmit` | ❌ **fails, 7 errors** (Problem 2) |
+| PHP tests | `php artisan test` | ✅ 12 passed, 34 assertions |
 | Frontend tests | — | ❌ **no runner exists** |
 | Lint | — | ❌ **no script exists** |
 
-Build output:
+Build output (sizes approximate — filename hashes are content hashes and change per build):
 
 ```
-public/build/assets/app-BuwQggso.css       68.70 kB │ gzip:  14.09 kB
-public/build/assets/explore-BqZJoalm.js   30.20 kB │ gzip:   9.47 kB
-public/build/assets/editor-CYdloLfP.js   402.85 kB │ gzip: 123.13 kB
-public/build/assets/share-C1mJqFf3.js    800.05 kB │ gzip: 214.79 kB   ← Problem 1
+public/build/assets/app-*.css              68.65 kB │ gzip:  14.10 kB
+public/build/assets/explore-*.js           30.43 kB │ gzip:   9.54 kB
+public/build/assets/editor-*.js           402.85 kB │ gzip: 123.13 kB
+public/build/assets/share-*.js            800.05 kB │ gzip: 214.79 kB   ← Problem 1
 ```
 
 Current published payloads in the database (all four are test fixtures, **none contain media**):
@@ -349,7 +368,7 @@ For scale, on disk: `node_modules/qrcode` = 558 KB across 156 files; `node_modul
 
 **Severity: High for velocity. Low for the shipped artefact.**
 
-`npx tsc --noEmit` fails with **8 errors**, all the same root cause:
+`npx tsc --noEmit` fails with **7 errors**, all the same root cause:
 
 ```
 resources/js/components/editor/EditorHeader.tsx(3,52):      error TS7016
@@ -375,7 +394,7 @@ resources/js/components/toolbar/ZoomControls.tsx(3,40):     error TS7016
 "scripts": { "build": "vite build", "dev": "vite" }
 ```
 
-There is **no `typecheck` script and no `lint` script.** Vite/esbuild strips types without checking them, so `npm run build` **passes cleanly** despite 8 type errors — which is exactly why this has survived. Any editor icon is imported in 8 files with zero compile-time verification of its props or return type.
+There is **no `typecheck` script and no `lint` script.** Vite/esbuild strips types without checking them, so `npm run build` **passes cleanly** despite 7 type errors — which is exactly why this has survived. Any editor icon is imported in 7 files with zero compile-time verification of its props or return type.
 
 **Why it matters:** the project claims `strict: true` and has ~5,800 lines of TS, but the type checker is effectively not in the loop. Errors are only discoverable by manually running `npx tsc --noEmit`, which nothing does. Any AI-assisted or team-based work on this repo currently operates without type safety as an enforced constraint.
 
@@ -393,7 +412,7 @@ Editor and Explore each implement, independently: label rendering, fill patterns
 |---|---|---|
 | Renderer | `EditorCanvas.tsx` | `ExploreSvg.tsx` |
 | View transform | `<Stage x y scaleX scaleY>` | `div` `transform: translate3d(x,y,0) scale(s)` |
-| Zoom limits | **0.1 – 8** (`EditorCanvas.tsx:313`) | **0.08 – 12** (`use-explore-gestures.ts:12-13`) |
+| Zoom limits | **0.1 – 8** (`EditorCanvas.tsx:313`) | **fit-scale – 12** (dynamic floor, `use-explore-gestures.ts`) |
 | Fit-to-view | 56px pad, clamp 0.12 – 2.5 (`EditorCanvas.tsx:153-166`) | responsive 20/40px pad, clamp 0.08 – 4 (`use-explore-gestures.ts:24-33`) |
 | Label component | `ShapeLabel` — Konva `Text`, word wrap, box shadow (`MapObjectNode.tsx:22`) | `ShapeLabel` — SVG `<text>`/`tspan`, manual `wrapLabel`, `paint-order` stroke (`ExploreSvg.tsx:36,55`) |
 | Fill patterns | offscreen `HTMLCanvasElement` → `fillPatternImage` (`zone-style.ts:50,72`) | SVG `<pattern>` defs, 14px/16px tiles (`ExploreSvg.tsx:377-405`) |
@@ -409,7 +428,7 @@ Editor and Explore each implement, independently: label rendering, fill patterns
 4. **The wallpaper feature added in the last commit (`8fb8ed7`) has to be maintained in both renderers** — `MapObjectNode.tsx:56-83` (Konva) and `ExploreSvg.tsx:109-177` (SVG), with different clipping maths and different "cover" fitting strategies.
 5. **Nothing enforces parity.** There is no test asserting that an object renders the same in both modes. Duplication without a parity check is duplication that rots.
 
-**Not yet known:** whether the visual divergence between editor and viewer has been noticed as a bug by the client. And whether the zoom-limit mismatch (0.1–8 vs 0.08–12) is intentional or an accident of two independently-tuned constants.
+**Not yet known:** whether the visual divergence between editor and viewer has been noticed as a bug by the client. And whether the zoom-range difference between the two modes (editor clamps 0.1–8; the viewer now floors at fit-scale and allows up to 12) is intentional or an accident of two independently-tuned constants.
 
 ---
 
@@ -506,7 +525,7 @@ These are genuine unknowns. A plan built on assumptions here will be wrong.
 
 7. **How much visual divergence between editor and viewer is acceptable?** Perfect parity is expensive. If "close enough" is fine, the fix may be a shared pure style/geometry layer plus a parity test, rather than unifying the renderers.
 8. **Is Konva required for the editor, or was it a default choice?** A single SVG renderer for both modes would remove the entire duplication class, at the cost of editor canvas performance on large maps. That is a real trade-off with no free answer.
-9. **Is the zoom-limit mismatch (0.1–8 vs 0.08–12) intentional?** If not, it is evidence of drift rather than a decision.
+9. **Is the zoom-range difference between the two modes intentional?** The editor clamps 0.1–8; the viewer floors at fit-scale (whole map visible) and allows up to 12. If the mismatch is not intentional, it is evidence of drift rather than a decision.
 
 **On Problem 4 (media):**
 
@@ -524,7 +543,7 @@ These are genuine unknowns. A plan built on assumptions here will be wrong.
 ## 11. Reproducing these measurements
 
 ```powershell
-# Problem 2 — type errors (expect 8 × TS7016)
+# Problem 2 — type errors (expect 7 × TS7016)
 npx tsc --noEmit
 
 # Problem 1 — bundle sizes (expect the 800 KB shared chunk + size warning)

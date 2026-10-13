@@ -9,9 +9,13 @@ export type ExploreView = {
 
 type Pointer = { x: number; y: number };
 
-const MIN_SCALE = 0.08;
 const MAX_SCALE = 12;
+const MAX_FIT_SCALE = 4;
 const PAN_MARGIN = 96;
+const MIN_FIT_SCALE = 0.01;
+const MOBILE_BREAKPOINT = 768;
+const FIT_TOP_CHROME = 88;
+const FIT_BOTTOM_CHROME = 168;
 
 function distance(a: Pointer, b: Pointer) {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -21,10 +25,32 @@ function midpoint(a: Pointer, b: Pointer): Pointer {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
-export function fitView(width: number, height: number, viewport: Bounds, padding = 28): ExploreView {
+function fitArea(viewport: Bounds): Bounds {
+  const mobile = viewport.width < MOBILE_BREAKPOINT;
+  return {
+    x: 0,
+    y: mobile ? FIT_TOP_CHROME : 0,
+    width: viewport.width,
+    height: Math.max(1, viewport.height - (mobile ? FIT_TOP_CHROME + FIT_BOTTOM_CHROME : 0)),
+  };
+}
+
+function fitPadding(viewport: Bounds): number {
+  return viewport.width < MOBILE_BREAKPOINT ? 20 : 40;
+}
+
+function containScale(width: number, height: number, viewport: Bounds, padding: number): number {
   const availW = Math.max(1, viewport.width - padding * 2);
   const availH = Math.max(1, viewport.height - padding * 2);
-  const scale = clamp(Math.min(availW / width, availH / height), MIN_SCALE, 4);
+  return clamp(Math.min(availW / width, availH / height), MIN_FIT_SCALE, MAX_FIT_SCALE);
+}
+
+export function minScaleFor(width: number, height: number, viewport: Bounds): number {
+  return containScale(width, height, fitArea(viewport), fitPadding(viewport));
+}
+
+export function fitView(width: number, height: number, viewport: Bounds, padding = 28): ExploreView {
+  const scale = containScale(width, height, viewport, padding);
   return {
     scale,
     x: viewport.x + (viewport.width - width * scale) / 2,
@@ -48,21 +74,30 @@ export function viewForBounds(bounds: Bounds, viewport: Bounds, padding = 36): E
 }
 
 function clampView(view: ExploreView, viewport: Bounds, mapWidth: number, mapHeight: number): ExploreView {
-  const scaledW = mapWidth * view.scale;
-  const scaledH = mapHeight * view.scale;
+  const scale = clamp(view.scale, minScaleFor(mapWidth, mapHeight, viewport), MAX_SCALE);
+  let x = view.x;
+  let y = view.y;
+  if (scale !== view.scale) {
+    const worldX = (viewport.width / 2 - view.x) / view.scale;
+    const worldY = (viewport.height / 2 - view.y) / view.scale;
+    x = viewport.width / 2 - worldX * scale;
+    y = viewport.height / 2 - worldY * scale;
+  }
+  const scaledW = mapWidth * scale;
+  const scaledH = mapHeight * scale;
   const minX = Math.min(PAN_MARGIN, viewport.width - PAN_MARGIN) - scaledW;
   const maxX = Math.max(PAN_MARGIN, viewport.width - PAN_MARGIN);
   const minY = Math.min(PAN_MARGIN, viewport.height - PAN_MARGIN) - scaledH;
   const maxY = Math.max(PAN_MARGIN, viewport.height - PAN_MARGIN);
   return {
-    scale: view.scale,
-    x: clamp(view.x, Math.min(minX, maxX), Math.max(minX, maxX)),
-    y: clamp(view.y, Math.min(minY, maxY), Math.max(minY, maxY)),
+    scale,
+    x: clamp(x, Math.min(minX, maxX), Math.max(minX, maxX)),
+    y: clamp(y, Math.min(minY, maxY), Math.max(minY, maxY)),
   };
 }
 
 function zoomView(current: ExploreView, factor: number, origin: Pointer): ExploreView {
-  const nextScale = clamp(current.scale * factor, MIN_SCALE, MAX_SCALE);
+  const nextScale = clamp(current.scale * factor, MIN_FIT_SCALE, MAX_SCALE);
   const worldX = (origin.x - current.x) / current.scale;
   const worldY = (origin.y - current.y) / current.scale;
   return {
@@ -127,18 +162,8 @@ export function useExploreGestures(mapWidth: number, mapHeight: number) {
 
   const fit = useCallback(() => {
     const viewport = measure();
-    const mobile = viewport.width < 768;
-    const pad = mobile ? 20 : 40;
-    const top = mobile ? 76 : 0;
-    const bottom = mobile ? 168 : 0;
-    const area: Bounds = {
-      x: 0,
-      y: top,
-      width: viewport.width,
-      height: Math.max(1, viewport.height - top - bottom),
-    };
     userAdjusted.current = false;
-    applyView(fitView(mapWidth, mapHeight, area, pad), true);
+    applyView(fitView(mapWidth, mapHeight, fitArea(viewport), fitPadding(viewport)), true);
   }, [applyView, mapHeight, mapWidth, measure]);
 
   const focusBounds = useCallback(
@@ -258,7 +283,7 @@ export function useExploreGestures(mapWidth: number, mapHeight: number) {
       const nextDist = distance(a, b);
       const nextMid = midpoint(a, b);
       const ratio = nextDist / Math.max(1, pinch.current.distance);
-      const nextScale = clamp(pinch.current.scale * ratio, MIN_SCALE, MAX_SCALE);
+      const nextScale = clamp(pinch.current.scale * ratio, MIN_FIT_SCALE, MAX_SCALE);
       const worldX = (pinch.current.mid.x - pinch.current.view.x) / pinch.current.view.scale;
       const worldY = (pinch.current.mid.y - pinch.current.view.y) / pinch.current.view.scale;
       moved.current = true;

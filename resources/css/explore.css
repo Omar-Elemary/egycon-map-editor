@@ -30,8 +30,11 @@
   color: #18181b;
 }
 
-.explore-header-fade {
-  background: linear-gradient(to bottom, rgb(24 24 27 / 0.82), transparent);
+.explore-header-bar {
+  background: #09090b;
+  border-bottom: 1px solid rgb(255 255 255 / 0.1);
+  box-shadow: 0 2px 12px rgb(0 0 0 / 0.4);
+  padding: max(0.75rem, var(--explore-safe-top)) 1rem 0.75rem;
 }
 
 @keyframes zone-pulse {

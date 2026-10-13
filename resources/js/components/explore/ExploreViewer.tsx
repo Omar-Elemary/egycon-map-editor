@@ -292,10 +292,8 @@ export function ExploreViewer({ map }: { map: MapProject }) {
           </div>
         </div>
 
-        <header className="pointer-events-none absolute inset-x-0 top-0 z-20 px-4 pb-8 pt-[max(0.75rem,var(--explore-safe-top))] md:hidden">
-          <div
-            className="explore-header-fade pointer-events-auto flex items-start justify-between gap-3"
-          >
+        <header className="explore-header-bar pointer-events-none absolute inset-x-0 top-0 z-20 md:hidden">
+          <div className="pointer-events-auto flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[11px] font-semibold tracking-[0.18em] text-lime-300 uppercase">Explore</p>
               <h1 className="truncate text-lg font-semibold">{map.name}</h1>
