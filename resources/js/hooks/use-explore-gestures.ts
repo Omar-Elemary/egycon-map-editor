@@ -11,11 +11,14 @@ type Pointer = { x: number; y: number };
 
 const MAX_SCALE = 12;
 const MAX_FIT_SCALE = 4;
+const MIN_FOCUS_SCALE = 0.12;
+const MAX_FOCUS_SCALE = 4;
 const PAN_MARGIN = 96;
 const MIN_FIT_SCALE = 0.01;
 const MOBILE_BREAKPOINT = 768;
 const FIT_TOP_CHROME = 88;
 const FIT_BOTTOM_CHROME = 168;
+const ZOOM_OUT_HEADROOM = 0.7;
 
 function distance(a: Pointer, b: Pointer) {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -46,7 +49,9 @@ function containScale(width: number, height: number, viewport: Bounds, padding: 
 }
 
 export function minScaleFor(width: number, height: number, viewport: Bounds): number {
-  return containScale(width, height, fitArea(viewport), fitPadding(viewport));
+  return (
+    containScale(width, height, fitArea(viewport), fitPadding(viewport)) * ZOOM_OUT_HEADROOM
+  );
 }
 
 export function fitView(width: number, height: number, viewport: Bounds, padding = 28): ExploreView {
@@ -59,30 +64,22 @@ export function fitView(width: number, height: number, viewport: Bounds, padding
 }
 
 export function viewForBounds(bounds: Bounds, viewport: Bounds, padding = 36): ExploreView {
-  const w = Math.max(48, bounds.width);
-  const h = Math.max(48, bounds.height);
+  const w = Math.max(1, bounds.width);
+  const h = Math.max(1, bounds.height);
   const scale = clamp(
     Math.min((viewport.width - padding * 2) / w, (viewport.height - padding * 2) / h),
-    0.12,
-    4,
+    MIN_FOCUS_SCALE,
+    MAX_FOCUS_SCALE,
   );
   return {
     scale,
-    x: viewport.x + (viewport.width - w * scale) / 2,
-    y: viewport.y + (viewport.height - h * scale) / 2,
+    x: viewport.x + viewport.width / 2 - (bounds.x + w / 2) * scale,
+    y: viewport.y + viewport.height / 2 - (bounds.y + h / 2) * scale,
   };
 }
 
 function clampView(view: ExploreView, viewport: Bounds, mapWidth: number, mapHeight: number): ExploreView {
   const scale = clamp(view.scale, minScaleFor(mapWidth, mapHeight, viewport), MAX_SCALE);
-  let x = view.x;
-  let y = view.y;
-  if (scale !== view.scale) {
-    const worldX = (viewport.width / 2 - view.x) / view.scale;
-    const worldY = (viewport.height / 2 - view.y) / view.scale;
-    x = viewport.width / 2 - worldX * scale;
-    y = viewport.height / 2 - worldY * scale;
-  }
   const scaledW = mapWidth * scale;
   const scaledH = mapHeight * scale;
   const minX = Math.min(PAN_MARGIN, viewport.width - PAN_MARGIN) - scaledW;
@@ -91,13 +88,22 @@ function clampView(view: ExploreView, viewport: Bounds, mapWidth: number, mapHei
   const maxY = Math.max(PAN_MARGIN, viewport.height - PAN_MARGIN);
   return {
     scale,
-    x: clamp(x, Math.min(minX, maxX), Math.max(minX, maxX)),
-    y: clamp(y, Math.min(minY, maxY), Math.max(minY, maxY)),
+    x: clamp(view.x, Math.min(minX, maxX), Math.max(minX, maxX)),
+    y: clamp(view.y, Math.min(minY, maxY), Math.max(minY, maxY)),
   };
 }
 
-function zoomView(current: ExploreView, factor: number, origin: Pointer): ExploreView {
-  const nextScale = clamp(current.scale * factor, MIN_FIT_SCALE, MAX_SCALE);
+// The zoom floor is applied here rather than left to clampView so the position
+// is derived from the scale the view will actually end up at. Anchoring on that
+// scale means reaching the floor is a no-op: the map does not drift sideways
+// when the user keeps zooming out past the limit.
+function zoomView(
+  current: ExploreView,
+  factor: number,
+  origin: Pointer,
+  minScale: number,
+): ExploreView {
+  const nextScale = clamp(current.scale * factor, minScale, MAX_SCALE);
   const worldX = (origin.x - current.x) / current.scale;
   const worldY = (origin.y - current.y) / current.scale;
   return {
@@ -169,15 +175,9 @@ export function useExploreGestures(mapWidth: number, mapHeight: number) {
   const focusBounds = useCallback(
     (bounds: Bounds) => {
       const viewport = measure();
-      const mobile = viewport.width < 768;
-      const area: Bounds = {
-        x: 0,
-        y: mobile ? 76 : 0,
-        width: viewport.width,
-        height: Math.max(1, viewport.height - (mobile ? 276 : 0)),
-      };
+      const mobile = viewport.width < MOBILE_BREAKPOINT;
       userAdjusted.current = true;
-      applyView(viewForBounds(bounds, area, mobile ? 48 : 72), true);
+      applyView(viewForBounds(bounds, fitArea(viewport), mobile ? 48 : 72), true);
     },
     [applyView, measure],
   );
@@ -185,13 +185,15 @@ export function useExploreGestures(mapWidth: number, mapHeight: number) {
   const zoomAt = useCallback(
     (factor: number, clientX?: number, clientY?: number) => {
       userAdjusted.current = true;
+      const viewport = measure();
       const origin =
         clientX != null && clientY != null
           ? toLocal(clientX, clientY)
-          : { x: measure().width / 2, y: measure().height / 2 };
-      applyView(zoomView(viewRef.current, factor, origin), true);
+          : { x: viewport.width / 2, y: viewport.height / 2 };
+      const minScale = minScaleFor(mapWidth, mapHeight, viewport);
+      applyView(zoomView(viewRef.current, factor, origin, minScale), true);
     },
-    [applyView, measure, toLocal],
+    [applyView, mapHeight, mapWidth, measure, toLocal],
   );
 
   const panBy = useCallback(
@@ -283,7 +285,11 @@ export function useExploreGestures(mapWidth: number, mapHeight: number) {
       const nextDist = distance(a, b);
       const nextMid = midpoint(a, b);
       const ratio = nextDist / Math.max(1, pinch.current.distance);
-      const nextScale = clamp(pinch.current.scale * ratio, MIN_FIT_SCALE, MAX_SCALE);
+      const nextScale = clamp(
+        pinch.current.scale * ratio,
+        minScaleFor(mapWidth, mapHeight, measure()),
+        MAX_SCALE,
+      );
       const worldX = (pinch.current.mid.x - pinch.current.view.x) / pinch.current.view.scale;
       const worldY = (pinch.current.mid.y - pinch.current.view.y) / pinch.current.view.scale;
       moved.current = true;
@@ -355,7 +361,10 @@ export function useExploreGestures(mapWidth: number, mapHeight: number) {
       }
       const factor = Math.exp(-dy * 0.0018);
       userAdjusted.current = true;
-      applyView(zoomView(viewRef.current, factor, origin));
+      const viewport = measure();
+      applyView(
+        zoomView(viewRef.current, factor, origin, minScaleFor(mapWidth, mapHeight, viewport)),
+      );
     }
 
     function onGesture(event: Event) {
@@ -388,7 +397,7 @@ export function useExploreGestures(mapWidth: number, mapHeight: number) {
       window.removeEventListener("pointerup", onWinUp);
       window.removeEventListener("pointercancel", onWinUp);
     };
-  }, [applyView, toLocal]);
+  }, [applyView, mapHeight, mapWidth, measure, toLocal]);
 
   function didMove() {
     return moved.current;
